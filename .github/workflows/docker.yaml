@@ -1,34 +1,47 @@
-name: Docker
 
+# 1.首先，在workflow文件中定义触发器，例如每次推送到主分支时触发同步操作。
+# 工作流名称
+name: Sync-Images-to-DockerHub-Example
+# 工作流运行时显示名称
+run-name: ${{ github.actor }} is Sync Images to DockerHub.
+# 怎样触发工作流
 on:
   push:
-    branches: [ main ]
-  # pull_request:
-  #   branches: [ main ]
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
-env:
-  REGISTRY: registry.cn-hangzhou.aliyuncs.com
-  ALIYUN_REGISTRY_USER: "${{ secrets.ALIYUN_REGISTRY_USER }}"
-  ALIYUN_REGISTRY_PASSWORD: "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
-  MM_NOTIFY_URL: "${{ secrets.MM_NOTIFY_URL }}"
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
 
+# 2.添加一个job来执行同步操作。在workflow文件中，添加一个job 并指定使用的操作系统环境。
+# 工作流程任务（通常含有一个或多个步骤）
 jobs:
-
-  build:
-    name: Pull
+  syncimages:
     runs-on: ubuntu-latest
+    # 在job中添加步骤来执行同步操作。在上述job中，添加步骤来执行skopeo命令，从registry.k8s.io仓库拉取镜像，并将其推送到docker.io仓库。
     steps:
-    - name: Setup Docker buildx
-      uses: docker/setup-buildx-action@79abd3f86f79a9d68a23c75a09a9a85889262adf
-
-    - name: Check out code
-      uses: actions/checkout@v2
-
-    - name: Build and push image to ACR EE
+    - name: Checkout Repos
+      uses: actions/checkout@v3
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2.9.1
+    # 设置项目Secrets以提供Docker Hub登录所需的用户名和密码。
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2.2.0
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        logout: false
+    
+    # 使用shell命令批量同步所需的镜像到dockerHub中
+    - name: Use Skopeo Tools Sync Image to Docker Hub
       run: |
-        docker login -u $ALIYUN_REGISTRY_USER -p $ALIYUN_REGISTRY_PASSWORD $REGISTRY
-        sh pull.sh
-        data=`cat trigger.txt`
-        curl  -H 'Content-Type: application/json' \
-         -d "{\"msgtype\": \"text\",\"text\": {\"content\":\"同步成功 $data \"}}" \
-         $MM_NOTIFY_URL
+        #!/usr/bin/env bash
+        skopeo copy --all docker://registry.k8s.io/kube-apiserver:v1.27.4 docker://docker.io/weiyigeek/kube-apiserver:v1.27.4
+        skopeo copy --all docker://registry.k8s.io/kube-controller-manager:v1.27.4 docker://docker.io/weiyigeek/kube-controller-manager:v1.27.4
+        skopeo copy --all docker://registry.k8s.io/kube-scheduler:v1.27.4 docker://docker.io/weiyigeek/kube-scheduler:v1.27.4
+        skopeo copy --all docker://registry.k8s.io/kube-proxy:v1.27.4 docker://docker.io/weiyigeek/kube-proxy:v1.27.4
+        skopeo copy --all docker://registry.k8s.io/pause:3.9 docker://docker.io/weiyigeek/pause:3.9
+        skopeo copy --all docker://registry.k8s.io/etcd:3.5.7-0 docker://docker.io/weiyigeek/etcd:3.5.7-0
+        skopeo copy --all docker://registry.k8s.io/coredns/coredns:v1.10.1 docker://docker.io/weiyigeek/coredns:v1.10.1
